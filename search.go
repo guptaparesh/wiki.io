@@ -5,8 +5,14 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"net/http"
+	"net/url"
 	"time"
+
+    "github.com/guptaparesh/wiki.io/searcher/internal"
+	"github.com/guptaparesh/wiki.io/searcher/kvpstore"
+
 )
 
 func handleError(err error) {
@@ -66,22 +72,35 @@ func ExecuteGetRequest(query string) ([]byte, error) {
 }
 
 func RunQuery(searchTerm string) *SrchQueryResponse {
+    defer myutil.LogElapsed(myutil.TrackTime("RunQuery"))
+    
 	if searchTerm == "" {
 		fmt.Println("Empty search term so skipping query execution")
 		return nil
 	}
-	body, err := ExecuteGetRequest(fmt.Sprintf("https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=%s&srprop=title&format=json", searchTerm))
-	handleError(err)
 
+    var err error
+    var body []byte
+
+    body = kvpstore.GetFromCache(searchTerm)
+    if body == nil {
+        query := fmt.Sprintf("https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=%s&srprop=title&format=json", url.QueryEscape(searchTerm))
+        body, err = ExecuteGetRequest(query)
+        handleError(err)
+        kvpstore.Put(searchTerm, body)
+    } else {
+        log.Println("Found", searchTerm, "in cache")
+    }
+    
 	var wikiRes SrchQueryResponse
 	if err := json.Unmarshal(body, &wikiRes); err != nil {
 		panic(err)
 	}
 
-	srs := make([]string, 0)
-	for _, sr := range wikiRes.Query.Search {
-		srs = append(srs, sr.Title)
-	}
+	// srs := make([]string, 0)
+	// for _, sr := range wikiRes.Query.Search {
+	// 	srs = append(srs, sr.Title)
+	// }
 	return &wikiRes
 }
 
